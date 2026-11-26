@@ -1,0 +1,85 @@
+# Full stack locally: docker compose up --build
+# Host ports are overridable in .env (see .env.example) when defaults clash.
+#   App:              http://localhost:3000
+#   API docs:         http://localhost:8080/scalar
+#   GraphQL IDE:      http://localhost:8080/graphql
+#   Traces/metrics:   http://localhost:18888   (Aspire dashboard, OpenTelemetry)
+#   RabbitMQ UI:      http://localhost:15672   (guest / guest)
+
+x-dotnet: &dotnet
+  restart: unless-stopped
+  environment: &dotnet-env
+    ConnectionStrings__Postgres: Host=postgres;Database=encore;Username=encore;Password=encore;Gss Encryption Mode=Disable
+    # Shared by API and workers: cache L2 + cluster-wide MusicBrainz rate limit.
+    ConnectionStrings__Redis: redis:6379
+    RabbitMq__Uri: amqp://guest:guest@rabbitmq:5672
+    OTEL_EXPORTER_OTLP_ENDPOINT: http://aspire-dashboard:18889
+    OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+    MusicBrainz__UserAgent: Encore/0.1 (personal learning project)
+  depends_on:
+    postgres: { condition: service_healthy }
+    rabbitmq: { condition: service_healthy }
+
+services:
+  api:
+    <<: *dotnet
+    build: { context: ., args: { PROJECT: Encore.Api } }
+    ports: ["${ENCORE_API_PORT:-8080}:8080"]
+    environment:
+      <<: *dotnet-env
+      ASPNETCORE_ENVIRONMENT: Development
+      Services__Recommender: http://recommender:8080
+      Database__MigrateOnStartup: "true"
+      Jwt__SigningKey: compose-only-signing-key-0123456789-abcdefghij
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      redis: { condition: service_started }
+
+  worker:
+    <<: *dotnet
+    build: { context: ., args: { PROJECT: Encore.Worker } }
+    deploy: { replicas: 2 } # competing consumers on one queue
+
+  recommender:
+    <<: *dotnet
+    build: { context: ., args: { PROJECT: Encore.Recommender } }
+    environment:
+      <<: *dotnet-env
+      Kestrel__EndpointDefaults__Protocols: Http2
+
+  web:
+    build: ./web
+    ports: ["${ENCORE_WEB_PORT:-3000}:80"]
+    depends_on: [api]
+
+  postgres:
+    image: postgres:17-alpine
+    environment: { POSTGRES_DB: encore, POSTGRES_USER: encore, POSTGRES_PASSWORD: encore }
+    ports: ["${ENCORE_POSTGRES_PORT:-5432}:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U encore -d encore"]
+      interval: 3s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    ports: ["${ENCORE_RABBIT_PORT:-5672}:5672", "${ENCORE_RABBIT_UI_PORT:-15672}:15672"]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      retries: 20
+
+  redis:
+    image: redis:8-alpine
+    ports: ["${ENCORE_REDIS_PORT:-6379}:6379"]
+
+  aspire-dashboard:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:13.6.5
+    ports: ["${ENCORE_DASHBOARD_PORT:-18888}:18888", "${ENCORE_OTLP_PORT:-4317}:18889"] # UI, OTLP gRPC for local dotnet run
+    environment:
+      ASPIRE_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
+
+volumes:
+  pgdata:

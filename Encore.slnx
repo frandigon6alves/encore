@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Encore.Api/Encore.Api.csproj" />
+    <Project Path="src/Encore.Core/Encore.Core.csproj" />
+    <Project Path="src/Encore.Recommender/Encore.Recommender.csproj" />
+    <Project Path="src/Encore.Worker/Encore.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Encore.IntegrationTests/Encore.IntegrationTests.csproj" />
+    <Project Path="tests/Encore.UnitTests/Encore.UnitTests.csproj" />
+  </Folder>
+</Solution>

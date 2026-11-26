@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+// Contract between Encore.Api (client) and Encore.Recommender (server).
+// Versioned by package name: breaking changes go to encore.recommendations.v2.
+package encore.recommendations.v1;
+
+option csharp_namespace = "Encore.Recommendations.V1";
+
+service Recommendations {
+  // Albums from the shared catalog that match the tags of albums the user rated 4 or 5.
+  rpc GetForUser (GetForUserRequest) returns (GetForUserResponse);
+}
+
+message GetForUserRequest {
+  string user_id = 1;
+  int32 limit = 2;
+}
+
+message Recommendation {
+  string album_id = 1;
+  string title = 2;
+  string artist = 3;
+  string cover_url = 4;
+  double score = 5;
+  repeated string matched_tags = 6;
+}
+
+message GetForUserResponse {
+  repeated Recommendation items = 1;
+}
